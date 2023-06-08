@@ -70,3 +70,16 @@ func TestToBytesBuildBin(t *testing.T) {
     os.WriteFile("D:\\files\\hdr-go-buildin.bin", buffer.Bytes(), os.ModePerm)
     h.PercentilesPrint(os.Stdout, 5, 1)
 }
+
+func TestToCompressedBytesBuildBin(t *testing.T) {
+    h := New(1, 10000000, 3)
+    for i := 0; i < 1000000; i++ {
+        if err := h.RecordValue(int64(i)); err != nil {
+            t.Fatal(err)
+        }
+    }
+
+    data, _ := h.dumpV2CompressedEncodingWithLevel(-1)
+    os.WriteFile("D:\\files\\hdr-go-compress-buildin.bin", data, os.ModePerm)
+    h.PercentilesPrint(os.Stdout, 5, 1)
+}

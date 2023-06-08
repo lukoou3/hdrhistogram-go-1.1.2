@@ -103,6 +103,47 @@ func (h *Histogram) dumpV2CompressedEncoding() (outBuffer []byte, err error) {
     return
 }
 
+// 和java的调式，java的是默认的压缩等级
+// internal method to encode an histogram in V2 Compressed format
+func (h *Histogram) dumpV2CompressedEncodingWithLevel(compressionLevel int) (outBuffer []byte, err error) {
+    // final buffer
+    buf := new(bytes.Buffer)
+    err = binary.Write(buf, binary.BigEndian, compressedEncodingCookie)
+    if err != nil {
+        return
+    }
+    toCompress, err := h.encodeIntoByteBuffer() // 没压缩的
+    if err != nil {
+        return
+    }
+    uncompressedBytes := toCompress.Bytes()
+
+    var b bytes.Buffer
+    w, err := zlib.NewWriterLevel(&b, compressionLevel)
+    if err != nil {
+        return
+    }
+    _, err = w.Write(uncompressedBytes)
+    if err != nil {
+        return
+    }
+    w.Close()
+
+    // LengthOfCompressedContents
+    compressedContents := b.Bytes()
+    err = binary.Write(buf, binary.BigEndian, int32(len(compressedContents)))
+    if err != nil {
+        return
+    }
+    err = binary.Write(buf, binary.BigEndian, compressedContents)
+    if err != nil {
+        return
+    }
+    //outBuffer = []byte(base64.StdEncoding.EncodeToString(buf.Bytes()))
+    outBuffer = buf.Bytes()
+    return
+}
+
 func (h *Histogram) encodeIntoByteBuffer() (*bytes.Buffer, error) {
 
     countsBytes, err := h.fillBufferFromCountsArray()

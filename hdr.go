@@ -81,6 +81,7 @@ func (h *Histogram) SetStartTimeMs(startTimeMs int64) {
 // Note: the numberOfSignificantValueDigits must be [1,5]. If lower than 1 the numberOfSignificantValueDigits will be
 // forced to 1, and if higher than 5 the numberOfSignificantValueDigits will be forced to 5.
 func New(lowestDiscernibleValue, highestTrackableValue int64, numberOfSignificantValueDigits int) *Histogram {
+    // 假设numberOfSignificantValueDigits输入的是3
     if numberOfSignificantValueDigits < 1 {
         numberOfSignificantValueDigits = 1
     } else if numberOfSignificantValueDigits > 5 {
@@ -90,11 +91,13 @@ func New(lowestDiscernibleValue, highestTrackableValue int64, numberOfSignifican
         lowestDiscernibleValue = 1
     }
 
+    // largestValueWithSingleUnitResolution = 2 * 10**3 = 2 * 1000 = 2000
     // Given a 3 decimal point accuracy, the expectation is obviously for "+/- 1 unit at 1000". It also means that
     // it's "ok to be +/- 2 units at 2000". The "tricky" thing is that it is NOT ok to be +/- 2 units at 1999. Only
     // starting at 2000. So internally, we need to maintain single unit resolution to 2x 10^decimalPoints.
     largestValueWithSingleUnitResolution := 2 * math.Pow10(numberOfSignificantValueDigits)
 
+    // subBucketCountMagnitude = log2(2000) = 11
     // We need to maintain power-of-two subBucketCount (for clean direct indexing) that is large enough to
     // provide unit resolution to at least largestValueWithSingleUnitResolution. So figure out
     // largestValueWithSingleUnitResolution's nearest power-of-two (rounded up), and use that:
@@ -103,24 +106,35 @@ func New(lowestDiscernibleValue, highestTrackableValue int64, numberOfSignifican
     if subBucketHalfCountMagnitude < 1 {
         subBucketHalfCountMagnitude = 1
     }
+    // subBucketCountMagnitude = 11 - 1 = 10
     subBucketHalfCountMagnitude--
 
+    // unitMagnitude = log2(1) = 0
     unitMagnitude := int32(math.Floor(math.Log2(float64(lowestDiscernibleValue))))
     if unitMagnitude < 0 {
         unitMagnitude = 0
     }
 
+    // subBucketCount = 2**(10 + 1) = 2048
     subBucketCount := int32(math.Pow(2, float64(subBucketHalfCountMagnitude)+1))
 
+    // subBucketHalfCount = 2048 / 2 = 1024
     subBucketHalfCount := subBucketCount / 2
+    // subBucketMask = 2048 - 1 = 2047
     subBucketMask := int64(subBucketCount-1) << uint(unitMagnitude)
 
+    // smallestUntrackableValue = subBucketCount = 2048
     // determine exponent range needed to support the trackable value with no
     // overflow:
     smallestUntrackableValue := int64(subBucketCount) << uint(unitMagnitude)
+    // bucketsNeeded = getBucketsNeededToCoverValue(2048, 10000000) = 14
+    // 2048 * (2 ** (x - 1)) >= 10000000 ? x = 14
     bucketsNeeded := getBucketsNeededToCoverValue(smallestUntrackableValue, highestTrackableValue)
 
+    // bucketCount = bucketsNeeded = 14
     bucketCount := bucketsNeeded
+    // countsLen = (14 + 1) * (2048 / 2) = 15360
+    // final int lengthNeeded = (numberOfBuckets + 1) * (subBucketHalfCount);
     countsLen := (bucketCount + 1) * (subBucketCount / 2)
 
     return &Histogram{
@@ -135,7 +149,7 @@ func New(lowestDiscernibleValue, highestTrackableValue int64, numberOfSignifican
         bucketCount:                 bucketCount,
         countsLen:                   countsLen,
         totalCount:                  0,
-        counts:                      make([]int64, countsLen),
+        counts:                      make([]int64, countsLen), // 内存消耗主要在这
         startTimeMs:                 0,
         endTimeMs:                   0,
         tag:                         "",
@@ -293,13 +307,16 @@ func (h *Histogram) RecordCorrectedValue(v, expectedInterval int64) error {
     return nil
 }
 
+// RecordValues 记录给定v的n次出现，如果该值超出范围，则返回错误。
 // RecordValues records n occurrences of the given value, returning an error if
 // the value is out of range.
 func (h *Histogram) RecordValues(v, n int64) error {
+    // 获取索引
     idx := h.countsIndexFor(v)
     if idx < 0 || int(h.countsLen) <= idx {
         return fmt.Errorf("value %d is too large to be recorded", v)
     }
+    // 逻辑简单：桶号索引位置+count(1), totalCount += count(1)
     h.setCountAtIndex(idx, n)
 
     return nil
@@ -625,11 +642,14 @@ func (h *Histogram) getBucketIndex(v int64) int32 {
 // returned k-1 in getBucketIndex(). Since we would then shift it one fewer bits here, it would be twice as big,
 // and therefore in the top half of subBucketCount.
 func (h *Histogram) getSubBucketIdx(v int64, idx int32) int32 {
+    // 子桶的idx = v右移桶idx
     return int32(v >> uint(int64(idx)+int64(h.unitMagnitude)))
 }
 
 func (h *Histogram) countsIndexFor(v int64) int {
+    // 获取桶index
     bucketIdx := h.getBucketIndex(v)
+    // 获取子桶index
     subBucketIdx := h.getSubBucketIdx(v, bucketIdx)
     return int(h.countsIndex(bucketIdx, subBucketIdx))
 }
